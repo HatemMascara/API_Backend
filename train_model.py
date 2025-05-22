@@ -1,40 +1,87 @@
+# train_model.py
+
 import pandas as pd
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.neural_network import MLPRegressor, MLPClassifier
+from sklearn.pipeline import Pipeline
 import joblib
+import os
 
-# Load your dataset
-data = pd.read_csv("student_performance_dataset.csv")
+# 📁 Ensure folder exists
+os.makedirs("trained_data", exist_ok=True)
 
-# Encode categorical columns
-le_participation = LabelEncoder()
-le_internet = LabelEncoder()
-le_result = LabelEncoder()
+# 📥 Load CSV
+df = pd.read_csv('csv/Diet_Recommendations.csv')
 
-data['participation'] = le_participation.fit_transform(data['participation'])
-data['has_internet'] = le_internet.fit_transform(data['has_internet'])
-data['final_result'] = le_result.fit_transform(data['final_result'])
+# ✅ Compute BMI
+df['BMI'] = df['Weight_kg'] / ((df['Height_cm'] / 100) ** 2)
 
-# Select features and label
-X = data[['study_hours', 'attendance_rate', 'sleep_hours', 'participation', 'has_internet']]
-y = data['final_result']
+# ✅ BMI Category
+def get_bmi_category(bmi):
+    if bmi < 18.5:
+        return 'Underweight'
+    elif 18.5 <= bmi < 25:
+        return 'Normal'
+    elif 25 <= bmi < 30:
+        return 'Overweight'
+    else:
+        return 'Obese'
 
-# Split dataset for training and testing
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+df['BMI_Category'] = df['BMI'].apply(get_bmi_category)
 
-# Build the model
-model = MLPClassifier(hidden_layer_sizes=(20,), max_iter=1000, random_state=42)
-model.fit(X_train, y_train)
+# ✅ Assign goal based on BMI
+def assign_goal(bmi):
+    if bmi < 18.5:
+        return 'Gain'
+    elif 18.5 <= bmi < 25:
+        return 'Maintain'
+    else:
+        return 'Lose'
 
-# Evaluate
-y_pred = model.predict(X_test)
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print(classification_report(y_test, y_pred, target_names=le_result.classes_))
+df['Goal'] = df['BMI'].apply(assign_goal)
 
-# Save model and encoders
-joblib.dump(model, "trained_data/student_model.pkl")
-joblib.dump(le_participation, "trained_data/encoder_participation.pkl")
-joblib.dump(le_internet, "trained_data/encoder_internet.pkl")
-joblib.dump(le_result, "trained_data/encoder_result.pkl")
+# 🎯 Keep relevant features
+selected_columns = [
+    'Age', 'Gender', 'Height_cm', 'Weight_kg',
+    'Smoking_Habit', 'Dietary_Habits', 'BMI', 'BMI_Category', 'Goal',
+    'Recommended_Calories', 'Recommended_Protein',
+    'Recommended_Carbs', 'Recommended_Fats', 'Recommended_Meal_Plan'
+]
+df = df[selected_columns]
+
+# 🎯 Separate targets
+y_reg = df[['Recommended_Calories', 'Recommended_Protein', 'Recommended_Carbs', 'Recommended_Fats']]
+
+# Encode classification target
+meal_plan_encoder = LabelEncoder()
+y_cls = meal_plan_encoder.fit_transform(df['Recommended_Meal_Plan'])
+joblib.dump(meal_plan_encoder, 'trained_data/meal_plan_encoder.pkl')
+
+# Prepare input features
+X_raw = df.drop(columns=[
+    'Recommended_Calories', 'Recommended_Protein',
+    'Recommended_Carbs', 'Recommended_Fats', 'Recommended_Meal_Plan'
+])
+X = pd.get_dummies(X_raw)
+joblib.dump(X.columns.tolist(), 'trained_data/model_features.pkl')
+
+# 📊 Train regression model
+X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(X, y_reg, test_size=0.2, random_state=42)
+reg_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('regressor', MLPRegressor(hidden_layer_sizes=(64, 32), activation='relu', max_iter=2000, early_stopping=True, random_state=42))
+])
+reg_pipeline.fit(X_train_r, y_train_r)
+joblib.dump(reg_pipeline, 'trained_data/model_reg.pkl')
+
+# 🔤 Train classification model
+X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X, y_cls, test_size=0.2, random_state=42)
+cls_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('classifier', MLPClassifier(hidden_layer_sizes=(64,), activation='relu', max_iter=2000, early_stopping=True, random_state=42))
+])
+cls_pipeline.fit(X_train_c, y_train_c)
+joblib.dump(cls_pipeline, 'trained_data/model_cls.pkl')
+
+print("✅ Training complete. All models saved to 'trained_data/'")
