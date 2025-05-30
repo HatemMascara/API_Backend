@@ -1,10 +1,10 @@
-# app.py
-
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # ✅ Import CORS
 import pandas as pd
 import joblib
 
 app = Flask(__name__)
+CORS(app)  # ✅ Enable CORS for all domains (you can restrict if needed)
 
 # Load trained models and configs
 reg_model = joblib.load('trained_data/model_reg.pkl')
@@ -62,6 +62,7 @@ def predict():
         "Recommended_Fats": round(reg_result[3], 2),
         "Recommended_Meal_Plan": meal_plan
     }
+
     return jsonify(response)
 
 if __name__ == '__main__':
